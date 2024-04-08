@@ -5,10 +5,14 @@ Werkzeug Documentation:  https://werkzeug.palletsprojects.com/
 This file creates your application.
 """
 
-from app import app
+from app import app, db
 from flask import render_template, request, jsonify, send_file
 import os
-
+from app.models import Movies
+from app.forms import MovieForm
+from werkzeug.utils import secure_filename
+from datetime import datetime
+from flask_wtf.csrf import generate_csrf
 
 ###
 # Routing for your application.
@@ -18,7 +22,33 @@ import os
 def index():
     return jsonify(message="This is the beginning of our API")
 
+@app.route('/api/v1/movies', methods=['POST'])
+def movies():
+    form = MovieForm()
 
+    if form.validate_on_submit():
+        title = form.title.data
+        description = form.description.data
+        created_at = datetime.now()
+
+        poster = form.poster.data
+        filename = secure_filename(poster.filename)
+        poster.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
+        
+        movie = Movies(title, description, filename, created_at)
+
+        db.session.add(movie)
+        db.session.commit()
+
+        return jsonify({
+            "message": "Movie Successfully added",
+            "title": movie.title,
+            "poster": movie.poster,
+            "description": movie.description
+        }), 201
+    else:
+        errors = form_errors(form)
+        return jsonify({"errors": errors}), 400
 ###
 # The functions below should be applicable to all Flask apps.
 ###
@@ -61,3 +91,31 @@ def add_header(response):
 def page_not_found(error):
     """Custom 404 page."""
     return render_template('404.html'), 404
+
+@app.route('/api/v1/csrf-token', methods=['GET']) 
+def get_csrf(): 
+ return jsonify({'csrf_token': generate_csrf()}) 
+
+@app.route('/api/v1/movies', methods=['GET'])
+def get_movies():
+    movies = Movies.query.all()
+    allMovies = []
+    for movie in movies:
+        data = {
+            "id" : movie.id,
+            "title": movie.title,
+            "description": movie.description,
+            "poster": movie.poster
+        }
+        allMovies.append(data)
+    return jsonify({"movies": allMovies})
+
+@app.route('/./movies/<movieid>')
+def movieid():
+    """Renders the respective <movieid> page."""
+    pass
+
+@app.route('/movies/<int:movieid>')
+def movie_id(movieid):
+    movie = Movies.query.get(movieid)
+    return jsonify({"Movie" : movie})
